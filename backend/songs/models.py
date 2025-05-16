@@ -24,11 +24,29 @@ class Song(models.Model):
         null=True,
         blank=True
     )
+    likes = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, 
+        related_name='liked_songs',
+        blank=True
+    )
+    dislikes = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, 
+        related_name='disliked_songs',
+        blank=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.title} - {self.artist}"
+    
+    @property
+    def like_count(self):
+        return self.likes.count()
+    
+    @property
+    def dislike_count(self):
+        return self.dislikes.count()
 
 class Playlist(models.Model):
     name = models.CharField(max_length=255)

@@ -8,9 +8,10 @@ import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { MusicIcon, LogOut, Plus, ArrowLeft, Trash2, ImageIcon, Pencil } from "lucide-react"
+import { MusicIcon, LogOut, Plus, ArrowLeft, Trash2, ImageIcon, Pencil, ThumbsUp, ThumbsDown } from "lucide-react"
 import { playlistApi, songsApi } from "@/lib/api"
 import { AudioPlayer } from "@/components/audio-player"
+import { SearchBar } from "@/components/search-bar"
 import Image from "next/image"
 import Link from "next/link"
 
@@ -24,6 +25,10 @@ interface Song {
   cover_image?: string
   is_famous: boolean
   uploader_username?: string
+  like_count: number
+  dislike_count: number
+  is_liked: boolean
+  is_disliked: boolean
 }
 
 interface Playlist {
@@ -44,13 +49,16 @@ export default function PlaylistDetailPage() {
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [availableSongs, setAvailableSongs] = useState<Song[]>([])
+  const [searchResults, setSearchResults] = useState<Song[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState("")
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [currentSongIndex, setCurrentSongIndex] = useState<number>(-1)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [coverImagePreview, setCoverImagePreview] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -96,11 +104,37 @@ export default function PlaylistDetailPage() {
     }
   }
 
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+
+    setIsSearching(true)
+
+    try {
+      const results = await songsApi.searchSongs(query)
+      // Filter out songs that are already in the playlist
+      const filteredResults = playlist
+        ? results.filter((song: Song) => !playlist.songs.some((playlistSong) => playlistSong.id === song.id))
+        : results
+      setSearchResults(filteredResults)
+    } catch (err) {
+      console.error("Error searching songs:", err)
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
   const addSongToPlaylist = async (songId: string) => {
     try {
       await playlistApi.addSongToPlaylist(playlistId, songId)
       fetchPlaylist() // Refresh playlist data
-      setIsDialogOpen(false)
+
+      // Update search results to remove the added song
+      setSearchResults((prev) => prev.filter((song) => song.id !== songId))
     } catch (err) {
       console.error("Error adding song to playlist:", err)
       setError("Failed to add song to playlist. Please try again.")
@@ -172,6 +206,120 @@ export default function PlaylistDetailPage() {
     }
   }
 
+  // Update the handleLike function with better debugging and error handling
+  const handleLike = async (song: Song, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent card click (which would play the song)
+    console.log(`Liking song: ${song.id} - ${song.title}`)
+
+    try {
+      console.log("Before API call - Current like status:", song.is_liked)
+      const response = await songsApi.likeSong(song.id)
+      console.log("Like API response:", response)
+
+      // Update song in playlist
+      if (playlist) {
+        console.log("Updating playlist songs after like")
+        const updatedSongs = playlist.songs.map((s) => {
+          if (s.id === song.id) {
+            const wasLiked = s.is_liked
+            console.log(`Song ${s.id} was liked: ${wasLiked}, updating to: ${!wasLiked}`)
+            return {
+              ...s,
+              is_liked: !wasLiked,
+              is_disliked: false,
+              like_count: wasLiked ? s.like_count - 1 : s.like_count + 1,
+              dislike_count: s.is_disliked ? s.dislike_count - 1 : s.dislike_count,
+            }
+          }
+          return s
+        })
+
+        console.log("Setting updated playlist")
+        setPlaylist({
+          ...playlist,
+          songs: updatedSongs,
+        })
+      }
+
+      // Update current song if it's the one being liked
+      if (currentSong && currentSong.id === song.id) {
+        console.log("Updating current song after like")
+        const wasLiked = currentSong.is_liked
+        setCurrentSong({
+          ...currentSong,
+          is_liked: !wasLiked,
+          is_disliked: false,
+          like_count: wasLiked ? currentSong.like_count - 1 : currentSong.like_count + 1,
+          dislike_count: currentSong.is_disliked ? currentSong.dislike_count - 1 : currentSong.dislike_count,
+        })
+      }
+
+      // Force a re-render
+      console.log("Forcing re-render")
+      setIsLoading(false)
+    } catch (err) {
+      console.error("Error liking song:", err)
+      setError(`Failed to like song: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // Update the handleDislike function with better debugging and error handling
+  const handleDislike = async (song: Song, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent card click (which would play the song)
+    console.log(`Disliking song: ${song.id} - ${song.title}`)
+
+    try {
+      console.log("Before API call - Current dislike status:", song.is_disliked)
+      const response = await songsApi.dislikeSong(song.id)
+      console.log("Dislike API response:", response)
+
+      // Update song in playlist
+      if (playlist) {
+        console.log("Updating playlist songs after dislike")
+        const updatedSongs = playlist.songs.map((s) => {
+          if (s.id === song.id) {
+            const wasDisliked = s.is_disliked
+            console.log(`Song ${s.id} was disliked: ${wasDisliked}, updating to: ${!wasDisliked}`)
+            return {
+              ...s,
+              is_disliked: !wasDisliked,
+              is_liked: false,
+              dislike_count: wasDisliked ? s.dislike_count - 1 : s.dislike_count + 1,
+              like_count: s.is_liked ? s.like_count - 1 : s.like_count,
+            }
+          }
+          return s
+        })
+
+        console.log("Setting updated playlist")
+        setPlaylist({
+          ...playlist,
+          songs: updatedSongs,
+        })
+      }
+
+      // Update current song if it's the one being disliked
+      if (currentSong && currentSong.id === song.id) {
+        console.log("Updating current song after dislike")
+        const wasDisliked = currentSong.is_disliked
+        setCurrentSong({
+          ...currentSong,
+          is_disliked: !wasDisliked,
+          is_liked: false,
+          dislike_count: wasDisliked ? currentSong.dislike_count - 1 : currentSong.dislike_count + 1,
+          like_count: currentSong.is_liked ? currentSong.like_count - 1 : currentSong.like_count,
+        })
+      }
+
+      // Force a re-render
+      console.log("Forcing re-render")
+      setIsLoading(false)
+    } catch (err) {
+      console.error("Error disliking song:", err)
+      setError(`Failed to dislike song: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   if (!user) {
     return null
   }
@@ -180,6 +328,9 @@ export default function PlaylistDetailPage() {
   const songsNotInPlaylist = playlist
     ? availableSongs.filter((song) => !playlist.songs.some((playlistSong) => playlistSong.id === song.id))
     : []
+
+  // Use search results if there's a search query, otherwise use filtered available songs
+  const songsToDisplay = searchQuery ? searchResults : songsNotInPlaylist
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-900 to-black text-white pb-24">
@@ -292,12 +443,45 @@ export default function PlaylistDetailPage() {
                       <DialogHeader>
                         <DialogTitle>Add Songs to Playlist</DialogTitle>
                       </DialogHeader>
-                      <div className="mt-4 max-h-[60vh] overflow-y-auto">
-                        {songsNotInPlaylist.length === 0 ? (
-                          <p className="text-center py-4 text-zinc-400">No more songs available to add.</p>
+
+                      <div className="mt-4 mb-4">
+                        <SearchBar onSearch={handleSearch} placeholder="Search for songs to add..." />
+                      </div>
+
+                      <div className="max-h-[60vh] overflow-y-auto">
+                        {isSearching ? (
+                          <div className="text-center py-4">
+                            <svg
+                              className="animate-spin h-6 w-6 mx-auto mb-2"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
+                            </svg>
+                            <p>Searching songs...</p>
+                          </div>
+                        ) : songsToDisplay.length === 0 ? (
+                          <div className="text-center py-4 text-zinc-400">
+                            {searchQuery
+                              ? `No songs found matching "${searchQuery}" that aren't already in this playlist.`
+                              : "No more songs available to add."}
+                          </div>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {songsNotInPlaylist.map((song) => (
+                            {songsToDisplay.map((song) => (
                               <Card key={song.id} className="bg-zinc-700/50 border-zinc-600 flex">
                                 <CardContent className="p-3 flex items-center justify-between w-full">
                                   <div className="flex items-center">
@@ -370,14 +554,37 @@ export default function PlaylistDetailPage() {
                           <div className="text-sm text-zinc-400">{song.artist}</div>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-zinc-400 hover:text-red-500"
-                        onClick={() => removeSongFromPlaylist(song.id)}
-                      >
-                        <Trash2 size={18} />
-                      </Button>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`px-2 ${song.is_liked ? "text-emerald-500" : "text-zinc-400 hover:text-white"}`}
+                          onClick={(e) => handleLike(song, e)}
+                        >
+                          <ThumbsUp className="h-4 w-4 mr-1" />
+                          <span>{song.like_count}</span>
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`px-2 ${song.is_disliked ? "text-red-500" : "text-zinc-400 hover:text-white"}`}
+                          onClick={(e) => handleDislike(song, e)}
+                        >
+                          <ThumbsDown className="h-4 w-4 mr-1" />
+                          <span>{song.dislike_count}</span>
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-zinc-400 hover:text-red-500"
+                          onClick={() => removeSongFromPlaylist(song.id)}
+                        >
+                          <Trash2 size={18} />
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

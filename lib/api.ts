@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/a
 console.log("API Base URL:", API_BASE_URL)
 
 // Helper function to get the auth token
-function getAuthHeader(): HeadersInit {
+function getAuthHeader(): Record<string, string> {
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
@@ -43,9 +43,9 @@ export const authApi = {
   login: async (email: string, password: string) => {
     const response = await fetch(`${API_BASE_URL}/auth/login/`, {
       method: "POST",
-      headers: new Headers({
+      headers: {
         "Content-Type": "application/json",
-      }),
+      },
       body: JSON.stringify({ email, password }),
     })
 
@@ -58,10 +58,10 @@ export const authApi = {
 
     const response = await fetch(`${API_BASE_URL}/auth/register/`, {
       method: "POST",
-      headers: new Headers({
+      headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-      }),
+      },
       body: JSON.stringify({ username, email, password, password2: password }),
       credentials: "include",
     })
@@ -73,9 +73,9 @@ export const authApi = {
   verifyToken: async (token: string) => {
     const response = await fetch(`${API_BASE_URL}/auth/verify/`, {
       method: "POST",
-      headers: new Headers({
+      headers: {
         "Content-Type": "application/json",
-      }),
+      },
       body: JSON.stringify({ token }),
     })
 
@@ -99,10 +99,10 @@ export const authApi = {
   logout: async (refresh: string) => {
     const response = await fetch(`${API_BASE_URL}/auth/logout/`, {
       method: "POST",
-      headers: new Headers({
+      headers: {
         ...getAuthHeader(),
         "Content-Type": "application/json",
-      }),
+      },
       body: JSON.stringify({ refresh }),
     })
 
@@ -118,17 +118,63 @@ export const songsApi = {
     const url = `${API_BASE_URL}/songs/${queryParams ? `?${queryParams}` : ""}`
 
     console.log("Fetching songs from:", url)
-    const response = await fetch(url, {
-      headers: new Headers(getAuthHeader() as Record<string, string>),
-    })
+    try {
+      const response = await fetch(url, {
+        headers: {
+          ...getAuthHeader(),
+        },
+      })
 
-    return handleResponse(response)
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Error in getAllSongs:", error)
+      throw new Error("Failed to fetch songs. Please check your network connection.")
+    }
+  },
+
+  // Get user's liked songs
+  getLikedSongs: async () => {
+    console.log("Fetching liked songs")
+    try {
+      const response = await fetch(`${API_BASE_URL}/songs/liked/`, {
+        headers: {
+          ...getAuthHeader(),
+        },
+      })
+
+      console.log("Liked songs response status:", response.status)
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Error fetching liked songs:", error)
+      throw error
+    }
+  },
+
+  // Search songs
+  searchSongs: async (query: string) => {
+    const url = `${API_BASE_URL}/songs/?search=${encodeURIComponent(query)}`
+
+    console.log("Searching songs:", url)
+    try {
+      const response = await fetch(url, {
+        headers: {
+          ...getAuthHeader(),
+        },
+      })
+
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Error in searchSongs:", error)
+      throw new Error("Failed to search songs. Please check your network connection.")
+    }
   },
 
   // Get song by ID
   getSongById: async (id: string) => {
     const response = await fetch(`${API_BASE_URL}/songs/${id}/`, {
-      headers: new Headers(getAuthHeader() as Record<string, string>),
+      headers: {
+        ...getAuthHeader(),
+      },
     })
 
     return handleResponse(response)
@@ -152,7 +198,9 @@ export const songsApi = {
   updateSong: async (id: string, formData: FormData) => {
     const response = await fetch(`${API_BASE_URL}/songs/${id}/`, {
       method: "PATCH",
-      headers: new Headers(getAuthHeader() as Record<string, string>),
+      headers: {
+        ...getAuthHeader(),
+      },
       body: formData,
     })
 
@@ -163,7 +211,9 @@ export const songsApi = {
   deleteSong: async (id: string) => {
     const response = await fetch(`${API_BASE_URL}/songs/${id}/`, {
       method: "DELETE",
-      headers: new Headers(getAuthHeader() as Record<string, string>),
+      headers: {
+        ...getAuthHeader(),
+      },
     })
 
     if (response.status === 204) {
@@ -172,6 +222,42 @@ export const songsApi = {
 
     return handleResponse(response)
   },
+
+  // Like a song
+  likeSong: async (id: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/songs/${id}/like/`, {
+        method: "POST",
+        headers: {
+          ...getAuthHeader(),
+          "Content-Type": "application/json",
+        },
+      })
+
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Error in likeSong:", error)
+      throw new Error("Failed to like song. Please try again.")
+    }
+  },
+
+  // Dislike a song
+  dislikeSong: async (id: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/songs/${id}/dislike/`, {
+        method: "POST",
+        headers: {
+          ...getAuthHeader(),
+          "Content-Type": "application/json",
+        },
+      })
+
+      return handleResponse(response)
+    } catch (error) {
+      console.error("Error in dislikeSong:", error)
+      throw new Error("Failed to dislike song. Please try again.")
+    }
+  },
 }
 
 // User API calls
@@ -179,7 +265,9 @@ export const userApi = {
   // Get user profile
   getProfile: async () => {
     const response = await fetch(`${API_BASE_URL}/users/me/`, {
-      headers: new Headers(getAuthHeader() as Record<string, string>),
+      headers: {
+        ...getAuthHeader(),
+      },
     })
 
     return handleResponse(response)
@@ -220,6 +308,20 @@ export const playlistApi = {
       console.error("Error fetching playlists:", error)
       throw error
     }
+  },
+
+  // Search playlists
+  searchPlaylists: async (query: string) => {
+    const url = `${API_BASE_URL}/playlists/?search=${encodeURIComponent(query)}`
+
+    console.log("Searching playlists:", url)
+    const response = await fetch(url, {
+      headers: {
+        ...getAuthHeader(),
+      },
+    })
+
+    return handleResponse(response)
   },
 
   // Get playlist by ID
